@@ -1,35 +1,39 @@
 /**
- * TODO:
- *    1. read whole file and dump to hex
+ * main.c
  */
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <string.h>
 #include <ctype.h>
 
-#define LINE_SIZE 1024
+#define MAX_SIZE 1024
+#define PATH_SEPERATOR '/'
 
-static const char usage[] = "glsl2cstr <shader>.<ext> <shader>_<ext>.h\n";
+static const char usage[] = "glsl2c path_to_file\n";
 
-static int write_quote_line(FILE *file, const char *line)
+/* Find last appearance of ch in str */
+static char * lastch(char *str, char ch)
 {
-        char str[LINE_SIZE];
-        int len;
+        int len = strlen(str);
 
-        len = snprintf(str, LINE_SIZE, "\"%s\"", line);
-        fputs(str, file);
-        fputs("\n", file);
+        while (len > 0) {
+                if (str[len - 1] == ch)
+                        return (str + len - 1);
+                --len;
+        }
 
-        return len;
+        return 0;
 }
 
 int main(int argc, char **argv)
 {
         FILE *ifile, *ofile;
-        char *input, *output, *s;
-        char filename[80] = {0}, ext[20] = {0};
-        int len, total_len = 0;
-        char line[LINE_SIZE] = {0}, header_guard[LINE_SIZE] = {0};
+        char *buf;
+        int buf_size, i;
+        char *input, output[MAX_SIZE];
+        char name[MAX_SIZE], *it, *last_sep;
+        char header_guard[MAX_SIZE], line[MAX_SIZE];
 
         if (argc > 1) {
                 input = argv[1];
@@ -38,24 +42,30 @@ int main(int argc, char **argv)
                 return -1;
         }
 
-        s = strchr(input, '.');
-        if (!s) {
-                fprintf(stderr, "Format of input file name is wrong!\n");
-                return -1;
+        last_sep = lastch(input, PATH_SEPERATOR);
+        if (last_sep)
+                strcpy(name, last_sep + 1);
+        else
+                strcpy(name, input);
+        /* Replace all . to _ and make sure all characters in name are lower case*/
+        it = name;
+        while (*it) {
+                if (*it == '.')
+                        *it = '_';
+                else
+                        *it = tolower(*it);
+                ++it;
         }
 
-        strncpy(filename, input, s - input);
-        strcpy(ext, s + 1);
-
-        if (argc > 2) {
-                output = argv[2];
+        /* Build path of output file from path of input file */
+        if (last_sep) {
+                strcpy(output, input);
+                last_sep = output + (last_sep - input);
+                /* Note: last_sep now belongs to output */
+                snprintf(last_sep + 1, MAX_SIZE - (last_sep - output + 1),
+                         "%s.h", name);
         } else {
-                output = calloc(strlen(input) + 3, sizeof(char));
-                if (!output) {
-                        fprintf(stderr, "%s\n", "Out of memory");
-                        return -1;
-                }
-                sprintf(output, "%s_%s.h", filename, ext);
+                snprintf(output, MAX_SIZE, "%s.h", name);
         }
 
         ifile = fopen(input, "r");
@@ -64,51 +74,54 @@ int main(int argc, char **argv)
                 return -1;
         }
 
+        /* Read input file to buf */
+        fseek(ifile, 0L, SEEK_END);
+        buf_size = ftell(ifile);
+        rewind(ifile);
+        buf = calloc(buf_size, sizeof(char));
+        if (!buf) {
+                fprintf(stderr, "Out of memory\n");
+                fclose(ifile);
+                return -1;
+        }
+        fread(buf, sizeof(char), buf_size, ifile);
+        fclose(ifile);  /* We don't need ifile anymore, close it */
+
         ofile = fopen(output, "w");
         if (!ofile) {
                 fprintf(stderr, "Cannot open %s for write\n", output);
-                fclose(ifile);
                 return -1;
         }
 
         /* Build header guard */
-        snprintf(header_guard, LINE_SIZE, "GF_%s_%s", filename, ext);
+        snprintf(header_guard, MAX_SIZE, "GF_%s_H", name);
+        it = header_guard;
+        while ((*it = toupper(*it)))
+                ++it;
 
-        /* fprintf(stdout, "%s\n", header_guard); */
-
-        /* Header guard is upper case string */
-        s = header_guard;
-        while ((*s = toupper(*s)))
-                ++s;
-
-        fprintf(stdout, "ok");
-
-        snprintf(line, LINE_SIZE, "#ifndef %s\n", header_guard);
+        snprintf(line, MAX_SIZE, "#ifndef %s\n", header_guard);
         fputs(line, ofile);
-        snprintf(line, LINE_SIZE, "#define %s\n\n", header_guard);
+        snprintf(line, MAX_SIZE, "#define %s\n\n", header_guard);
         fputs(line, ofile);
 
-        snprintf(line, LINE_SIZE, "const char %s_%s[] = {\n", filename, ext);
+        snprintf(line, MAX_SIZE, "const char %s[] = {\n", name);
         fputs(line, ofile);
 
-        while ((s = fgets(line, LINE_SIZE, ifile))) {
-                while (*s) {
-                        fprintf(ofile, "0x%x%s", *s, *(s + 1) == '\0' ? ",\n" : ", ");
-                        s++;
-                        total_len++;
-                }
-        }
-        fprintf(ofile, "%s\n", "0x00");  /* NULL terminate string */
+        for (i = 0; i < buf_size; ++i)
+                fprintf(ofile, "%s0x%02x%s%s",
+                        (i % 13 == 0) ? "    " : " ",
+                        buf[i],
+                        (i < buf_size - 1) ? "," : "",
+                        ((i + 1) % 13 == 0 || (i == buf_size - 1)) ? "\n" : "");
 
         fputs("};\n\n", ofile);
 
-        snprintf(line, LINE_SIZE, "const int %s_%s_len = %d;\n\n", filename, ext, total_len);
+        snprintf(line, MAX_SIZE, "const int %s_len = %d;\n\n", name, buf_size);
         fputs(line, ofile);
 
-        snprintf(line, LINE_SIZE, "#endif %s", header_guard);
+        snprintf(line, MAX_SIZE, "#endif %s", header_guard);
         fputs(line, ofile);
 
-        fclose(ifile);
         fclose(ofile);
 
         return 0;
