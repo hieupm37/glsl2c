@@ -13,6 +13,6 @@ The output file is in the same directory of input file. And the name is construc
 
 For example:
 
-flat.vert      => flat_vert.h
-flat_vert.glsl => flat_vert_glsl.h
-flatvert       => flatvert.h
++ flat.vert      => flat_vert.h
++ flat_vert.glsl => flat_vert_glsl.h
++ flatvert       => flatvert.h
