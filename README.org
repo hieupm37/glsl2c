@@ -1,0 +1,18 @@
+#+TITLE: README
+#+AUTHOR: Hieu Phan
+#+STARTUP: showall
+
+glsl2c is a tiny tool help to convert glsl program file to C array of char. You can use this array as a shader source.
+
+Usage:
+#+BEGIN_SRC bash
+glsl2c path_to_input
+#+END_SRC
+
+The output file is in the same directory of input file. And the name is constructed from input file name.
+
+For example:
+
+flat.vert      => flat_vert.h
+flat_vert.glsl => flat_vert_glsl.h
+flatvert       => flatvert.h
